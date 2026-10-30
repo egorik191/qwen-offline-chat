@@ -1,0 +1,43 @@
+name: Build APK
+
+# Сборка APK в облаке — на компьютере пользователя ничего не требуется.
+# Модель не хранится в git: сборщик скачивает её напрямую с Hugging Face
+# (это просто файл, не облачный API) и проверяет SHA-256.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Системные зависимости
+        run: sudo apt-get update && sudo apt-get install -y autoconf libtool pkg-config zlib1g-dev
+
+      - name: Установка buildozer
+        run: pip3 install --upgrade pip wheel && pip3 install buildozer cython
+
+      - name: Скачивание модели Qwen2.5-0.5B (491 МБ)
+        run: |
+          curl -L --retry 3 --retry-delay 5 -o qwen2.5-0.5b-instruct-q4_k_m.gguf \
+            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+          echo "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db  qwen2.5-0.5b-instruct-q4_k_m.gguf" | sha256sum -c -
+
+      - name: Сборка APK (20-40 минут)
+        run: buildozer android debug
+
+      - name: Готовый APK в артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenchat-apk
+          path: bin/*.apk
+          if-no-files-found: error
