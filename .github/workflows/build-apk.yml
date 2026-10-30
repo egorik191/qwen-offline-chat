@@ -3,6 +3,10 @@ name: Build APK
 # Сборка APK в облаке — на компьютере пользователя ничего не требуется.
 # Модель не хранится в git: сборщик скачивает её напрямую с Hugging Face
 # (это просто файл, не облачный API) и проверяет SHA-256.
+#
+# Сборка идёт в официальным Docker-образе kivy/buildozer: там зафиксирована
+# проверенная цепочка инструментов (autoconf/libtool/gcc), иначе на свежих
+# ubuntu-latest падает рецепт libffi (LT_SYS_SYMBOL_USCORE при autoreconf).
 on:
   push:
     branches: [main]
@@ -11,20 +15,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: kivy/buildozer:latest
+      options: --user root
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Системные зависимости
-        run: sudo apt-get update && sudo apt-get install -y autoconf libtool pkg-config zlib1g-dev
-
-      - name: Установка buildozer
-        run: pip3 install --upgrade pip wheel && pip3 install buildozer cython
 
       - name: Скачивание модели Qwen2.5-0.5B (491 МБ)
         run: |
