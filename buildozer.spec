@@ -14,7 +14,7 @@ source.dir = .
 # README, buildozer.spec и прочее не включаются — расширений нет в списке.
 source.include_exts = py,png,jpg,kv,atlas,gguf,so,txt
 
-version = 1.1
+version = 1.2
 
 # Зависимости. pylolm — чистый Python (py3-none-any wheel), собирается в APK
 # без рецептов; jinja2 нужен pylolm для chat-шаблонов из GGUF.
