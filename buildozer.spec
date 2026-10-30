@@ -18,7 +18,11 @@ version = 1.0
 
 # Зависимости. pylolm — чистый Python (py3-none-any wheel), собирается в APK
 # без рецептов; jinja2 нужен pylolm для chat-шаблонов из GGUF.
-requirements = python3,kivy,pylolm,jinja2
+# charset_normalizer и markupsafe закреплены на pure-python версиях
+# (py3-none-any): их свежие сборки публикуют android-колёса, которые
+# buildozer вшивает в requirements.txt прямыми URL, а хостовой pip их
+# отвергает ("not a supported wheel on this platform").
+requirements = python3,kivy,pylolm,jinja2,charset_normalizer==2.1.1,markupsafe==2.0.1
 
 orientation = portrait
 fullscreen = 0
