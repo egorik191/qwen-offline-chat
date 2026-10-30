@@ -35,6 +35,10 @@ android.api = 34
 android.minapi = 24
 android.ndk_api = 24
 
+# Автоматически принимать лицензии Android SDK (обязательно для CI/Actions —
+# без этого сборка падает на интерактивном запросе "Accept? (y/N)")
+android.accept_sdk_license = True
+
 # Иконку buildozer подставит дефолтную; свои — положи icon.png и presplash.jpg
 # в корень проекта и раскомментируй:
 #icon.filename = %(source.dir)s/icon.png
