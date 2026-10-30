@@ -31,7 +31,7 @@ import threading
 #                       модель и .so-библиотеки находятся тем же кодом, что и
 #                       на компьютере, — никакой special-case логики.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "qwen2.5-0.5b-instruct-q4_k_m.gguf")
+MODEL_PATH = os.path.join(BASE_DIR, "qwen2.5-3b-instruct-q4_k_m.gguf")
 
 # pylolm: где искать нативные библиотеки llama.cpp (.so). В APK они лежат
 # рядом с main.py (попадают туда через source.include_exts = ...,so).
@@ -132,6 +132,9 @@ class Bubble(BoxLayout):
         self.size_hint = (0.85, None)
         self.padding = dp(10)
         self.spacing = dp(2)
+        # ФИКС: высота пузыря обязана следовать за содержимым, иначе при
+        # стриминге (label растёт) текст вылезает за фон-прямоугольник.
+        self.bind(minimum_height=self.setter("height"))
 
         self.label = Label(
             text=text, font_size=dp(15), color="#ffffff",
@@ -155,7 +158,7 @@ class Bubble(BoxLayout):
 
 
 class ChatApp(App):
-    title = "Qwen 2.5 — офлайн-чат"
+    title = "Egor AI"
 
     def build(self):
         self.history = []          # [{"role": ..., "content": ...}] для модели
@@ -225,7 +228,7 @@ class ChatApp(App):
     def _after_load(self, _dt):
         if self.engine.ready:
             self.status.text = (
-                f"Готово — Qwen2.5-0.5B • контекст {N_CTX} • офлайн")
+                f"Готово — Qwen2.5-3B • контекст {N_CTX} • офлайн")
             self.add_system("Модель загружена. Спросите что-нибудь!")
         else:
             err = self.engine.load_error or "неизвестная ошибка"
@@ -308,7 +311,7 @@ class ChatApp(App):
             return
         if answer:
             self.history.append({"role": "assistant", "content": answer})
-        self.status.text = "Готово — Qwen2.5-0.5B • офлайн"
+        self.status.text = "Готово — Qwen2.5-3B • офлайн"
         self._scroll_down()
 
     def clear_chat(self):

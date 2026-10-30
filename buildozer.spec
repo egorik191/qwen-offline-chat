@@ -1,8 +1,8 @@
 [app]
 
 # Название приложения и имя пакета (package.name — без пробелов и точек)
-title = Qwen Офлайн-Чат
-package.name = qwenchat
+title = Egor AI
+package.name = egorai
 package.domain = org.example
 
 # Код приложения и все данные лежат в корне проекта
@@ -14,7 +14,7 @@ source.dir = .
 # README, buildozer.spec и прочее не включаются — расширений нет в списке.
 source.include_exts = py,png,jpg,kv,atlas,gguf,so,txt
 
-version = 1.0
+version = 1.1
 
 # Зависимости. pylolm — чистый Python (py3-none-any wheel), собирается в APK
 # без рецептов; jinja2 нужен pylolm для chat-шаблонов из GGUF.
