@@ -35,7 +35,8 @@ jobs:
           echo "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db  qwen2.5-0.5b-instruct-q4_k_m.gguf" | sha256sum -c -
 
       - name: Сборка APK (20-40 минут)
-        run: buildozer android debug
+        # yes | — buildozer под root спрашивает подтверждение; в CI не спросить
+        run: yes | buildozer android debug
 
       - name: Готовый APK в артефакты
         uses: actions/upload-artifact@v4
