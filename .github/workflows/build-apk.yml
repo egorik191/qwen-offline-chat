@@ -36,6 +36,10 @@ jobs:
 
       - name: Сборка APK (20-40 минут)
         # yes | — buildozer под root спрашивает подтверждение; в CI не спросить
+        # PIP_NO_BINARY — charset_normalizer публикует android-колёса, которые
+        # хостовой pip отвергает; собираем её из исходников (она pure-python)
+        env:
+          PIP_NO_BINARY: charset_normalizer
         run: yes | buildozer android debug
 
       - name: Готовый APK в артефакты
