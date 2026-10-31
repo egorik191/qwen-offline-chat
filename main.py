@@ -59,7 +59,7 @@ MAX_CONTINUATIONS = 4
 MAX_AGENT_STEPS = 6      # максимум команд за один запрос
 N_CTX = 2048
 
-TOOLS_HELP = ("🛠 Режим файлов включён. Могу: список/чтение/запись/удаление "
+TOOLS_HELP = ("Режим файлов включён. Могу: список/чтение/запись/удаление "
               "файлов и создание папок — в папке приложения и на памяти "
               "телефона (/sdcard), если Android разрешит.")
 
@@ -224,7 +224,7 @@ class CodeCard(BoxLayout):
         lang_lbl = Label(text=lang or "код", font_size=dp(11),
                          color=hex_color("#8f897f"), halign="left")
         lang_lbl.bind(width=lambda i, w: setattr(i, "text_size", (w, None)))
-        btn = PillButton("⧉ Копировать", bg="#4a453e", fg=TEXT_MAIN, font=11,
+        btn = PillButton("Копировать", bg="#4a453e", fg=TEXT_MAIN, font=11,
                          radius=14, size_hint_x=None, width=dp(120),
                          height=dp(28))
         btn.bind(on_press=lambda _: self.copy())
@@ -270,7 +270,7 @@ class Bubble(BoxLayout):
 
         name, bg, nc = {
             "user": ("Ты", MY_BUBBLE, "#f7e7dd"),
-            "assistant": ("✳ Egor AI", AI_BUBBLE, "#d9a583"),
+            "assistant": ("Egor AI", AI_BUBBLE, "#d9a583"),
             "system": ("", "#3a332a", TEXT_SOFT),
         }[role]
 
@@ -376,11 +376,11 @@ class ChatApp(App):
         self._gen_started = time.time()
         Window.clearcolor = hex_color(BG)
 
-        # --- шапка: ✳ Egor AI + статус слева, кнопки справа
+        # --- шапка: Egor AI + статус слева, кнопки справа
         top = BoxLayout(size_hint_y=None, height=dp(58), spacing=dp(8),
                         padding=[dp(14), dp(6)])
         titles = BoxLayout(orientation="vertical", spacing=dp(2))
-        name_lbl = Label(text="✳ Egor AI", font_size=dp(18), bold=True,
+        name_lbl = Label(text="Egor AI", font_size=dp(18), bold=True,
                          color=hex_color(ACCENT), halign="left",
                          size_hint_y=None, height=dp(24))
         name_lbl.bind(width=lambda i, w: setattr(i, "text_size", (w, None)))
@@ -391,16 +391,16 @@ class ChatApp(App):
         titles.add_widget(name_lbl)
         titles.add_widget(self.status)
 
-        btn_copy = PillButton("⧉", bg=CARD, fg=TEXT_SOFT, font=16, radius=22,
-                              size_hint_x=None, width=dp(44),
+        btn_copy = PillButton("Копир.", bg=CARD, fg=TEXT_SOFT, font=12,
+                              radius=22, size_hint_x=None, width=dp(70),
                               height=dp(44))
         btn_copy.bind(on_press=lambda _: self.copy_last())
-        self.btn_tools = PillButton("🛠 выкл", bg=CARD, fg=TEXT_SOFT,
+        self.btn_tools = PillButton("Файлы: выкл", bg=CARD, fg=TEXT_SOFT,
                                     font=12, radius=22, size_hint_x=None,
-                                    width=dp(76), height=dp(44))
-        self.btn_tools.bind(on_press=lambda _: self.toggle_tools())
+                                    width=dp(92), height=dp(44))
+        self.btn_tools.bind(on_press=lambda _: self.safe(self.toggle_tools))
         btn_clear = PillButton("Очистить", bg=CARD, fg=TEXT_SOFT, font=13,
-                               radius=22, size_hint_x=None, width=dp(96),
+                               radius=22, size_hint_x=None, width=dp(88),
                                height=dp(44))
         btn_clear.bind(on_press=lambda _: self.clear_chat())
         top.add_widget(titles)
@@ -416,19 +416,22 @@ class ChatApp(App):
                                  bar_color=hex_color("#5a544c"))
         self.scroll.add_widget(self.msg_list)
 
-        # --- чипсы-подсказки
-        chips_row = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(8),
-                              padding=[dp(10), 0])
+        # --- чипсы-подсказки: горизонтальная прокрутка, не вылезают
+        chips_scroll = ScrollView(size_hint_y=None, height=dp(40),
+                                  do_scroll_x=True, do_scroll_y=False,
+                                  bar_width=0)
+        chips_row = BoxLayout(size_hint=(None, None), height=dp(36),
+                              spacing=dp(8), padding=[dp(10), 0])
+        chips_row.bind(minimum_width=chips_row.setter("width"))
         for label in ("Расскажи о себе", "Идея для проекта", "Напиши код",
                       "Объясни просто"):
             chip = PillButton(label, bg=CARD, fg="#cfc9c0", font=12,
                               radius=19, size_hint_x=None,
                               width=dp(8 * len(label) + 26))
-            # ВАЖНО: обработчик только через bind (без on_press-override),
-            # и через безопасную обёртку — исключение попадёт в чат, не в крах
             chip.bind(on_press=lambda _b, t=label: self.safe(
                 lambda: self.preset(t)))
             chips_row.add_widget(chip)
+        chips_scroll.add_widget(chips_row)
 
         # --- строка ввода-пилюля
         row = BoxLayout(size_hint_y=None, height=dp(58), spacing=dp(8),
@@ -456,7 +459,7 @@ class ChatApp(App):
         root = BoxLayout(orientation="vertical", spacing=dp(4))
         root.add_widget(top)
         root.add_widget(self.scroll)
-        root.add_widget(chips_row)
+        root.add_widget(chips_scroll)
         root.add_widget(row)
 
         threading.Thread(target=self._load_model, daemon=True).start()
@@ -482,8 +485,7 @@ class ChatApp(App):
     def _after_load(self, _dt):
         if self.engine.ready:
             self.set_status("Готов • офлайн")
-            self.add_system("Привет! Я Egor AI — работаю без интернета. "
-                            "Спросите что-нибудь ✨")
+            self.add_system("Привет! Я Egor AI — работаю без интернета.")
         else:
             err = self.engine.load_error or "неизвестная ошибка"
             self.set_status("Движок недоступен")
@@ -522,7 +524,7 @@ class ChatApp(App):
                 try:
                     from kivy.core.clipboard import Clipboard
                     Clipboard.copy(msg["content"])
-                    self.add_system("Ответ скопирован в буфер обмена ⧉")
+                    self.add_system("Ответ скопирован в буфер обмена")
                 except Exception as exc:
                     self.add_system(f"Не удалось скопировать: {exc}")
                 return
@@ -596,7 +598,7 @@ class ChatApp(App):
                                    "Продолжай ответ."})
                     Clock.schedule_once(
                         lambda dt, c=cmd_text, r=result:
-                        self.add_system(f"🛠 {c[:60]}\n→ {r[:140]}"))
+                        self.add_system(f"КОМАНДА: {c[:60]}\n→ {r[:140]}"))
                     # видимый текст ответа — без команды
                     Clock.schedule_once(
                         lambda dt, a=answer[:idx]: self._replace_stream(a))
@@ -613,11 +615,53 @@ class ChatApp(App):
 
     def toggle_tools(self):
         self.tools = not self.tools
-        self.btn_tools.text = "🛠 вкл" if self.tools else "🛠 выкл"
+        self.btn_tools.text = "Файлы: вкл" if self.tools else "Файлы: выкл"
         self.btn_tools._bg = hex_color(ACCENT if self.tools else CARD)
         self.btn_tools._upd()
+        if self.tools and not self._ensure_storage_permission():
+            return  # разрешения нет — ждем, пока пользователь выдаст
         self.add_system(TOOLS_HELP if self.tools
-                        else "🛠 Режим файлов выключен.")
+                        else "Режим файлов выключен.")
+
+    def _ensure_storage_permission(self):
+        """Проверить доступ к общей памяти; на Android попросить его.
+
+        MANAGE_EXTERNAL_STORAGE — не обычное разрешение, его выдают только
+        через специальную страницу настроек, которую мы и открываем.
+        """
+        # быстрая проверка: можно ли писать в общую память
+        probe = os.path.join("/sdcard", ".egorai_probe") \
+            if os.path.isdir("/sdcard") else None
+        if probe is None or os.access("/sdcard", os.W_OK):
+            try:
+                if probe:
+                    open(probe, "w").close()
+                    os.remove(probe)
+            except OSError:
+                pass
+            return True
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            Uri = autoclass("android.net.Uri")
+            Activity = autoclass("org.kivy.android.PythonActivity")
+            pkg = Activity.mActivity.getPackageName()
+            intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:" + pkg))
+            Activity.mActivity.startActivity(intent)
+            self.add_system(
+                "Android открыл страницу доступа к файлам.\n"
+                "1. Включи тумблер 'Разрешить доступ ко всем файлам'\n"
+                "2. Вернись в приложение\n"
+                "3. Снова нажми 'Файлы: вкл'")
+        except Exception as exc:
+            self.add_system(
+                "Не удалось открыть настройки: " + str(exc) +
+                "\nВыдай доступ вручную: Настройки -> Приложения -> "
+                "Egor AI -> Разрешения -> Файлы и медиа")
+        return False
 
     def _replace_stream(self, text):
         """Заменить видимый текст текущего пузыря (после выполнения команды)."""
@@ -662,7 +706,7 @@ class ChatApp(App):
         self.engine.reset()
         self.msg_list.clear_widgets()
         self._stream_bubble = None
-        self.add_system("Диалог очищен. Чем помочь? ✨")
+        self.add_system("Диалог очищен. Чем помочь?")
 
     def on_pause(self):
         return True
