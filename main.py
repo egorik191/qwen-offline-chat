@@ -82,6 +82,55 @@ class PillButton(Button):
         self._color.rgba = (c[0] * k, c[1] * k, c[2] * k, a)
 
 
+class CodeCard(BoxLayout):
+    """Тёмная карточка с кодом и кнопкой «Копировать»."""
+
+    def __init__(self, code, lang="", **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "vertical"
+        self.size_hint = (1, None)
+        self.padding = [dp(12), dp(8)]
+        self.spacing = dp(4)
+        self.bind(minimum_height=self.setter("height"))
+        self.code = code
+
+        head = BoxLayout(size_hint_y=None, height=dp(28))
+        lang_lbl = Label(text=lang or "код", font_size=dp(11),
+                         color=hex_color("#8f897f"), halign="left")
+        lang_lbl.bind(width=lambda i, w: setattr(i, "text_size", (w, None)))
+        btn = PillButton("⧉ Копировать", bg="#4a453e", fg=TEXT_MAIN, font=11,
+                         radius=14, size_hint_x=None, width=dp(120),
+                         height=dp(28))
+        btn.bind(on_press=lambda _: self.copy())
+        head.add_widget(lang_lbl)
+        head.add_widget(btn)
+
+        body = Label(text=code.strip("\n"), font_size=dp(13),
+                     color=hex_color("#efe9df"), halign="left", valign="top",
+                     size_hint_y=None)
+        body.bind(width=lambda i, w: setattr(i, "text_size", (w, None)))
+        body.bind(texture_size=lambda i, s: setattr(i, "height", s[1]))
+
+        self.add_widget(head)
+        self.add_widget(body)
+
+        with self.canvas.before:
+            self._color = Color(*hex_color("#161411"))
+            self._rect = RoundedRectangle(pos=self.pos, size=self.size,
+                                          radius=[dp(12)])
+        self.bind(pos=lambda _, p: setattr(self._rect, "pos", p))
+        self.bind(size=lambda _, s: setattr(self._rect, "size", s))
+
+    def copy(self):
+        from kivy.core.clipboard import Clipboard
+        Clipboard.copy(self.code)
+        Clock.schedule_once(lambda dt: self._flash_done())
+
+    def _flash_done(self):
+        # лёгкая обратная связь: карточка вспыхивает тёплым
+        self._color.rgba = hex_color("#33261a")
+
+
 class Bubble(BoxLayout):
     """Сообщение: имя, текст, время; высота следует за содержимым."""
 
@@ -115,11 +164,13 @@ class Bubble(BoxLayout):
         self.add_widget(self.label)
 
         if role != "system":
-            t = Label(text=time.strftime("%H:%M"), font_size=dp(10),
-                      color=hex_color("#8f897f"), size_hint_y=None,
-                      height=dp(13), halign="right")
-            t.bind(width=lambda i, w: setattr(i, "text_size", (w, None)))
-            self.add_widget(t)
+            self.time_lbl = Label(
+                text=time.strftime("%H:%M"), font_size=dp(10),
+                color=hex_color("#8f897f"), size_hint_y=None,
+                height=dp(13), halign="right")
+            self.time_lbl.bind(
+                width=lambda i, w: setattr(i, "text_size", (w, None)))
+            self.add_widget(self.time_lbl)
 
         with self.canvas.before:
             Color(*hex_color(bg))
@@ -127,6 +178,27 @@ class Bubble(BoxLayout):
                                           radius=[dp(18)])
         self.bind(pos=lambda _, p: setattr(self._rect, "pos", p))
         self.bind(size=lambda _, s: setattr(self._rect, "size", s))
+
+    def format_with_code(self, text):
+        """Переформатировать пузырь: блоки ``` становятся карточками
+        с кнопкой «Копировать». Вызывается после завершения ответа."""
+        self.clear_widgets()
+        parts = text.split("```")
+        for i, part in enumerate(parts):
+            if i % 2 == 1:  # нечётные части — код
+                lines = part.split("\n")
+                lang = lines[0].strip() if lines and len(lines) > 1 else ""
+                code = "\n".join(lines[1:]) if lang else part
+                self.add_widget(CodeCard(code, lang))
+            elif part.strip():
+                lbl = Label(text=part.strip("\n"), font_size=dp(15),
+                            color=hex_color(TEXT_MAIN), halign="left",
+                            valign="top", size_hint_y=None)
+                lbl.bind(width=lambda i, w: setattr(i, "text_size", (w, None)))
+                lbl.bind(texture_size=lambda i, s: setattr(i, "height", s[1]))
+                self.add_widget(lbl)
+        if self.time_lbl.parent is None:  # время добавляем в конец
+            self.add_widget(self.time_lbl)
 
 
 class Engine:
@@ -394,6 +466,9 @@ class ChatApp(App):
             return
         if answer:
             self.history.append({"role": "assistant", "content": answer})
+            if self._stream_bubble is not None:
+                # блоки кода -> карточки с кнопкой «Копировать»
+                self._stream_bubble.format_with_code(answer)
             secs = max(time.time() - self._gen_started, 0.001)
             st = "Готов • офлайн"
             try:
