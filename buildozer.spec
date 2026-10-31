@@ -27,10 +27,10 @@ requirements = python3,kivy,pylolm,jinja2,charset_normalizer==2.1.1,markupsafe==
 orientation = portrait
 fullscreen = 0
 
-# Права на хранение: реально нужны ТОЛЬКО если положишь модель на /sdcard
-# вместо упаковки в APK. В нашей схеме (модель внутри APK) можно даже
-# удалить эти строки — оставлены по требованию.
-android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+# Права на хранение. Для работы файлового агента (🛠) на Android 11+ нужен
+# MANAGE_EXTERNAL_STORAGE («Все файлы») — пользователь выдаёт его в
+# Настройки → Приложения → Egor AI → Разрешения.
+android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE
 
 # Android arm64: единственная архитектура, для которой pylolm публикует
 # нативные библиотеки. minapi 24 = минимальный Android 7.0.

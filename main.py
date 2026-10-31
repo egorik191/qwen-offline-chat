@@ -5,6 +5,7 @@ Kivy + pylolm (llama.cpp). Полностью офлайн.
 """
 
 import os
+import re
 import threading
 import time
 
@@ -41,9 +42,134 @@ TEXT_SOFT = "#a8a29b"
 
 SYSTEM_PROMPT = ("Ты — полезный ассистент по имени Egor AI. Отвечай кратко и "
                  "по-русски, если вопрос на русском. Если просят код — пиши код.")
+
+TOOLS_PROMPT = """
+
+Ты можешь работать с файлами устройства. Доступные команды (пиши их РОВНО в таком виде в ответе, по одной за раз, и останавливайся — результат тебе пришлют):
+[CMD:список путь] — показать файлы папки
+[CMD:чтение путь] — прочитать файл
+[CMD:запись путь]
+текст файла
+[/CMD] — создать/перезаписать файл
+[CMD:удалить путь] — удалить файл
+[CMD:папка путь] — создать папку
+Пример: пользователь просит сохранить заметку — пиши [CMD:запись /sdcard/Documents/заметка.txt]\nтекст\n[/CMD] и жди результат. После результата продолжай ответ."""
 MAX_TOKENS = 700
 MAX_CONTINUATIONS = 4
+MAX_AGENT_STEPS = 6      # максимум команд за один запрос
 N_CTX = 2048
+
+TOOLS_HELP = ("🛠 Режим файлов включён. Могу: список/чтение/запись/удаление "
+              "файлов и создание папок — в папке приложения и на памяти "
+              "телефона (/sdcard), если Android разрешит.")
+
+
+# ---------------------------------------------------------------- инструменты
+
+def allowed_roots():
+    """Папки, внутри которых агенту разрешено работать."""
+    roots = [BASE_DIR]                       # папка приложения
+    for p in ("/sdcard", os.path.expanduser("~")):
+        if os.path.isdir(p):
+            roots.append(p)
+    return roots
+
+
+def safe_path(path):
+    """Проверить путь: только внутри разрешённых корней."""
+    p = os.path.realpath(os.path.expanduser(str(path).strip()))
+    for root in allowed_roots():
+        if p == root or p.startswith(root + os.sep):
+            return p
+    return None
+
+
+def tool_list(path="."):
+    p = safe_path(path)
+    if p is None:
+        return "ОШИБКА: путь вне разрешённых папок"
+    if not os.path.isdir(p):
+        return f"ОШИБКА: папка не найдена: {path}"
+    items = []
+    for name in sorted(os.listdir(p))[:50]:
+        full = os.path.join(p, name)
+        items.append(("[папка] " if os.path.isdir(full) else "") + name)
+    return f"Папка {p}:\n" + ("\n".join(items) or "(пусто)")
+
+
+def tool_read(path):
+    p = safe_path(path)
+    if p is None:
+        return "ОШИБКА: путь вне разрешённых папок"
+    try:
+        with open(p, encoding="utf-8", errors="replace") as f:
+            data = f.read(4000)
+        return f"Содержимое {p}:\n{data}"
+    except OSError as exc:
+        return f"ОШИБКА чтения: {exc}"
+
+
+def tool_write(path, content):
+    p = safe_path(path)
+    if p is None:
+        return "ОШИБКА: путь вне разрешённых папок"
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(content)
+        return f"Записано {len(content)} символов в {p}"
+    except OSError as exc:
+        if "Permission" in type(exc).__name__:
+            return ("ОШИБКА: Android запретил запись. Дай приложению "
+                    "'Все файлы': Настройки → Приложения → Egor AI → "
+                    "Разрешения → Файлы и медиа → Разрешить доступ ко всем файлам")
+        return f"ОШИБКА записи: {exc}"
+
+
+def tool_delete(path):
+    p = safe_path(path)
+    if p is None:
+        return "ОШИБКА: путь вне разрешённых папок"
+    try:
+        if os.path.isdir(p):
+            os.rmdir(p)
+            return f"Папка удалена: {p}"
+        os.remove(p)
+        return f"Файл удалён: {p}"
+    except OSError as exc:
+        return f"ОШИБКА удаления: {exc}"
+
+
+def tool_mkdir(path):
+    p = safe_path(path)
+    if p is None:
+        return "ОШИБКА: путь вне разрешённых папок"
+    try:
+        os.makedirs(p, exist_ok=True)
+        return f"Папка создана: {p}"
+    except OSError as exc:
+        return f"ОШИБКА: {exc}"
+
+
+def run_tool(cmd_line):
+    """Выполнить [CMD:...]; вернуть результат строкой для модели."""
+    m = re.match(r"\[CMD:([а-яё]+)\s+([^\]]+)\]?", cmd_line, re.I)
+    if not m:
+        return "ОШИБКА: не понял команду"
+    kind, path = m.group(1).lower(), m.group(2).strip()
+    if kind == "список":
+        return tool_list(path)
+    if kind == "чтение":
+        return tool_read(path)
+    if kind == "запись":
+        body = cmd_line.split("]", 1)[1]
+        body = body.split("[/CMD]")[0].strip("\n")
+        return tool_write(path, body)
+    if kind == "удалить":
+        return tool_delete(path)
+    if kind == "папка":
+        return tool_mkdir(path)
+    return f"ОШИБКА: неизвестная команда '{kind}'"
 
 
 def hex_color(h):
@@ -245,6 +371,7 @@ class ChatApp(App):
         self.history = []
         self.engine = Engine(MODEL_PATH)
         self.busy = False
+        self.tools = False
         self._stream_bubble = None
         self._gen_started = time.time()
         Window.clearcolor = hex_color(BG)
@@ -268,12 +395,17 @@ class ChatApp(App):
                               size_hint_x=None, width=dp(44),
                               height=dp(44))
         btn_copy.bind(on_press=lambda _: self.copy_last())
+        self.btn_tools = PillButton("🛠 выкл", bg=CARD, fg=TEXT_SOFT,
+                                    font=12, radius=22, size_hint_x=None,
+                                    width=dp(76), height=dp(44))
+        self.btn_tools.bind(on_press=lambda _: self.toggle_tools())
         btn_clear = PillButton("Очистить", bg=CARD, fg=TEXT_SOFT, font=13,
                                radius=22, size_hint_x=None, width=dp(96),
                                height=dp(44))
         btn_clear.bind(on_press=lambda _: self.clear_chat())
         top.add_widget(titles)
         top.add_widget(btn_copy)
+        top.add_widget(self.btn_tools)
         top.add_widget(btn_clear)
 
         # --- история
@@ -421,13 +553,18 @@ class ChatApp(App):
         threading.Thread(target=self._generate, daemon=True).start()
 
     def _generate(self):
-        """Рабочий поток: стриминг + авто-продолжение при обрыве по лимиту."""
-        answer, error, turns = "", None, 0
+        """Рабочий поток: стриминг + авто-продолжение обрывов + агентный
+        цикл с файловыми командами ([CMD:...])."""
+        answer, error = "", None
+        steps = 0
         try:
-            while True:
+            while steps <= MAX_AGENT_STEPS:
+                steps += 1
                 part, finish = "", None
-                msgs = ([{"role": "system", "content": SYSTEM_PROMPT}]
-                        + self.history)
+                msgs = [{"role": "system",
+                         "content": SYSTEM_PROMPT + (TOOLS_PROMPT
+                                                     if self.tools else "")}]
+                msgs += self.history
                 if answer:  # продолжение после обрыва
                     msgs += [{"role": "assistant", "content": answer},
                              {"role": "user",
@@ -442,8 +579,30 @@ class ChatApp(App):
                     if ch.get("finish_reason"):
                         finish = ch["finish_reason"]
                 answer += part
-                turns += 1
-                if finish != "length" or turns > MAX_CONTINUATIONS:
+
+                # --- агентный шаг: есть ли команда?
+                idx = answer.find("[CMD:")
+                if self.tools and idx >= 0:
+                    end = answer.find("[/CMD]", idx)
+                    cmd_text = (answer[idx:end + 6] if end >= 0
+                                else answer[idx:])
+                    result = run_tool(cmd_text)
+                    # модель видит полную переписку: команда + результат
+                    self.history.append({"role": "assistant",
+                                         "content": answer})
+                    self.history.append({
+                        "role": "user",
+                        "content": f"РЕЗУЛЬТАТ КОМАНДЫ:\n{result}\n"
+                                   "Продолжай ответ."})
+                    Clock.schedule_once(
+                        lambda dt, c=cmd_text, r=result:
+                        self.add_system(f"🛠 {c[:60]}\n→ {r[:140]}"))
+                    # видимый текст ответа — без команды
+                    Clock.schedule_once(
+                        lambda dt, a=answer[:idx]: self._replace_stream(a))
+                    continue
+
+                if finish != "length" or steps > MAX_CONTINUATIONS + 1:
                     break
                 Clock.schedule_once(lambda dt: self._append("\n"))
         except PyLoLmError as exc:
@@ -451,6 +610,19 @@ class ChatApp(App):
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         Clock.schedule_once(lambda dt: self._finish(answer, error))
+
+    def toggle_tools(self):
+        self.tools = not self.tools
+        self.btn_tools.text = "🛠 вкл" if self.tools else "🛠 выкл"
+        self.btn_tools._bg = hex_color(ACCENT if self.tools else CARD)
+        self.btn_tools._upd()
+        self.add_system(TOOLS_HELP if self.tools
+                        else "🛠 Режим файлов выключен.")
+
+    def _replace_stream(self, text):
+        """Заменить видимый текст текущего пузыря (после выполнения команды)."""
+        if self._stream_bubble is not None:
+            self._stream_bubble.label.text = text
 
     def _append(self, piece):
         if self._stream_bubble is not None:
@@ -465,10 +637,14 @@ class ChatApp(App):
             self.add_system(error)
             return
         if answer:
-            self.history.append({"role": "assistant", "content": answer})
+            # убрать служебные команды из финального ответа
+            idx = answer.find("[CMD:")
+            clean = answer[:idx].strip() if idx >= 0 else answer
+            if clean:
+                self.history.append({"role": "assistant", "content": clean})
             if self._stream_bubble is not None:
                 # блоки кода -> карточки с кнопкой «Копировать»
-                self._stream_bubble.format_with_code(answer)
+                self._stream_bubble.format_with_code(clean or answer)
             secs = max(time.time() - self._gen_started, 0.001)
             st = "Готов • офлайн"
             try:
